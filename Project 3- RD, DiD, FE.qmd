@@ -1,0 +1,1314 @@
+---
+title: "Project3-Team 43"
+author: "Jiayi Lang, Evanna Shen, Calida Mathias, Crystal Zhang, Jade Tsai"
+format: html
+editor: visual
+---
+
+## Project 3-Team 43
+
+-   RD/FE: What is the causal effect of obtaining "top seller" status (based on a rating cutoff) on seller revenue?
+-   DiD: Did the introduction of a platform-wide commission reduction policy increase seller revenue?
+
+### Part 1 - Introduction
+
+#### 1.1 RD/FE:
+
+We are a consulting firm specializing in causal inference and experimentation analytics for digital marketplaces. Our client is NorthBay Marketplace, an e-commerce marketplace platform that connects third-party sellers with consumers. The platform uses a Top Seller badge tied to a rating threshold (4.7) to signal seller quality and influence buyer trust.
+
+#### 1.2 DiD:
+
+We are a consulting firm specializing in policy evaluation and revenue impact measurement for online platforms. We help marketplaces evaluate pricing/fee changes using DiD and panel causal methods. Our client is ShopSphere, an e-commerce platform that introduced a commission reduction policy starting at time period 7, targeted at small sellers, while large sellers serve as a natural comparison group.
+
+### Part 2 - Summary
+
+#### 2.1 RD/FE
+
+**Client question**
+
+**The client wants to know whether the Top Seller badge itself causally increases seller revenue, beyond the fact that higher-rated sellers naturally earn more.**
+
+**DAG**
+
+Core structure: Seller ability affects both Rating and Revenue; Rating affects both Top Seller status and Revenue; Top Seller status affects Revenue; Time affects Revenue (for specific details, please refer to the data simulation part).
+
+Intuition: ability is a confounder, so we need a design (cutoff-based RD + within-seller FE) that isolates the badge impact.
+
+**Methods used:**
+
+We implement RD at the 4.7 cutoff. Because badge receipt is imperfect (some qualifying sellers are missed), our main RD specification is fuzzy RD (cutoff as an instrument for badge receipt). We also report the sharp discontinuity as a descriptive benchmark.
+
+Two-way Fixed Effects (seller FE + time FE) on $log⁡(revenue)$log(revenue) to use within-seller changes over time while absorbing common shocks.
+
+**Results of analysis:**
+
+Around the cutoff, we observe a discontinuity in revenue that is consistent with an incremental effect of the badge; RD estimates are local and less precise, while FE is statistically tighter in the panel.
+
+-   FE estimates are also positive, indicating that even comparing a seller to their own past performance, receiving the badge is associated with higher revenue.
+
+-   In the simulation design, the badge effect is calibrated at approximately δ ≈ 0.15 log points, i.e. roughly e\^0.15−1 ≈ 16% higher revenue for badge recipients near the threshold.
+
+**Implication for the client:**
+
+1.  Treat the badge as a revenue lever, not only a label: improving badge credibility/visibility can lift seller revenue.
+
+2.  Monitor for threshold gaming and consider graduated tiers to increase seller incentives without creating extreme cliff effects.
+
+3.  If the goal is seller growth, the platform can test targeted exposure boosts for near-cutoff sellers to quantify incremental GMV vs. cost.
+
+#### 2.2 DiD
+
+**Client Question**: **Did the introduction of a platform-wide commission reduction policy increase seller revenue?**
+
+**Methods used**
+
+We implement DiD in three complementary ways:
+
+(1) 2×2 mean DiD (treated vs control; pre vs post) as an intuitive baseline.
+
+(2) Regression DiD with the interaction $Small_i \times Post_t$, estimated on both revenue levels and log(revenue), with seller-clustered SEs.
+
+(3) First Differences (FD) as a robustness check to remove time-invariant seller heterogeneity via differencing; include time controls after differencing.
+
+Identification relies on a parallel trends assumption: absent the policy, small and large sellers would have experienced similar revenue changes over time.
+
+**Results of analysis**
+
+-   After the policy, small sellers' revenue increases more than large sellers', implying a positive policy effect. The TWFE DiD and FD specifications provide consistent direction: the incremental post-policy lift is attributed to the commission reduction under the DiD identifying assumptions.
+-   In the simulation design, the policy effect is calibrated at𝛿≈ 0.10 log points, i.e. about 𝑒\^0.10−1 ≈ 10.5% higher revenue for eligible sellers post-policy.
+
+**Implication for the client**
+
+-   If the effect size is economically meaningful, the commission reduction can be framed as a seller retention and growth investment.
+
+-   If the effect size is economically meaningful, the commission reduction can be positioned as a seller retention and growth investment. Next steps: refine targeting (category, tenure, margin), pre-register outcome metrics, and use the A/B design in future policy changes to strengthen causal certainty and monitor unintended consequences.
+
+### Part 3 - Data Simulation
+
+We used the prompt as stated below to generate the data:
+
+:   You are a Lead Data Scientist at a consulting firm specializing in digital marketplaces. Write R code to simulate a panel dataset for an e-commerce platform. The goal is to evaluate (1) the causal effect of a commission reduction policy on seller revenue using Difference-in-Differences, and (2) the causal effect of obtaining Top Seller status based on a rating cutoff using Regression Discontinuity and Fixed Effects. We want to generate two separate datasets corresponding to the two identification strategies:
+
+    1.  Difference-in-Differences (Commission reduction policy)
+    2.  Regression Discontinuity with Fixed Effects (Top Seller Status)
+
+    Both simulations model seller revenue using a log-normal outcome consistent with real-world e-commerce marketplaces.
+
+Section 1: RD/FE Simulation
+
+:   Research question: What is the causal effect of obtaining Top Seller status on seller revenue? The distribution of target variable (Y), we model revenue as $$
+    Revenue_{it} = \exp(β0​+β1​Rating_{it}​+δTopSeller_{it}​+α_{i​}+γ_{t​}+ϵ_{it}​),\\
+    \qquad \epsilon \sim \mathcal{N}(0, \sigma^2)
+    $$
+
+    This structure ensures: revenue is strictly positive, revenue increases smoothly with rating, and a discontinuous jump occurs at the cutoff. Regarding the distribution of treatment variable (D), treatment assignment follows a deterministic cutoff rule where $TopSeller_{it} = 1$ means that the $Rating_{it} >= 4.7$ and $TopSeller_{it} = 0$ means that the $Rating_{it} < 4.7$.
+
+    This creates a sharp regression discontinuity. For the distribution of running variable, we defined rating as:
+
+    $$
+    \\Rating_{it} \sim \mathcal{N}(4.5, 0.3)
+    $$
+
+    This produces realistic variation around the cutoff. All in all, this creates a DAG:
+
+```{r}
+if (!requireNamespace("dagitty", quietly = TRUE)) {
+  stop("Package 'dagitty' is required but not installed.")
+}
+library(dagitty)
+rd_dag <- dagitty("dag {
+
+SellerAbility -> Rating
+SellerAbility -> Revenue
+
+Rating -> TopSeller
+Rating -> Revenue
+
+TopSeller -> Revenue
+Time -> Revenue
+
+}
+")
+plot(rd_dag)
+```
+
+Below is the RD/FE Simulation code:
+
+```{r}
+set.seed(2027)
+
+# PARAMETERS
+N <- 1000
+T <- 12
+
+seller_id <- rep(1:N, each = T)
+time      <- rep(1:T,  times = N)
+
+# RUNNING VARIABLE (rating)
+cutoff <- 4.7
+rating_raw <- rnorm(N*T, mean = 4.5, sd = 0.3)
+rating <- pmin(pmax(rating_raw, 3.0), 5.0)
+
+# FUZZY assignment: probability jumps at cutoff but not deterministic
+p_above <- 0.85
+p_below <- 0.15
+prob_treatment <- ifelse(rating >= cutoff, p_above, p_below)
+top_seller <- rbinom(N*T, size = 1, prob = prob_treatment)
+
+# FIXED EFFECTS
+alpha_i <- rnorm(N, mean = 8, sd = 1)    # seller fixed effect
+alpha   <- rep(alpha_i, each = T)
+
+gamma_t <- 0.03 * time                   # time trend / time FE proxy
+
+# NOISE
+epsilon <- rnorm(N*T, mean = 0, sd = 0.25)
+
+# STRUCTURAL PARAMETERS
+beta0 <- 5
+beta_rating <- 0.4
+delta <- 0.15   # badge effect in log revenue
+
+# OUTCOME (log revenue model, then exponentiate)
+log_revenue <- beta0 +
+  beta_rating * rating +
+  delta * top_seller +
+  alpha +
+  gamma_t +
+  epsilon
+
+revenue <- exp(log_revenue)
+
+rd_data <- data.frame(
+  seller_id = seller_id,
+  time      = time,
+  rating    = rating,
+  top_seller= top_seller,
+  revenue   = revenue
+)
+
+write.csv(rd_data, "rd_simulation.csv", row.names = FALSE)
+```
+
+Section 2: Difference-in-Differences Simulation
+
+:   Research question: Did the introduction of a platform-wide commission reduction policy increase seller revenue?
+
+The distribution of the target variable (Y) is seller revenue. Revenue in e-commerce marketplaces is strictly positive, highly right-skewed, and heavy-tailed, with a small number of sellers generating disproportionately large revenue. Therefore, we model revenue using an exponential function of a linear index with Gaussian noise:
+
+$$
+Revenue_{it}​= \exp(β0​+β1​SmallSeller_{i}​+β2​Post_{t}​+δ(SmallSelleri​×Post_{t​})+α_{i​}+γ_{t​}+ϵ_{it}​)\\
+ϵit∼\mathcal{N}(0, \sigma^2)
+$$
+
+where: $SmallSeller_{i}$ is the treatment group indicator, $post_{t}$ is the policy timing indicator, $\alpha_{i}$ represents seller fixed effect, and $\gamma_{t}$ represents time fixed effects. This implies:
+
+$$
+Revenue_{it}​∼LogNormal(μ_{it}​,σ^2)
+$$
+
+Similarly, this formula ensures that the revenue remains strictly positive, revenue exhibits realistic skewness, and that policy effects are multiplicative, consistent with reduced commission increasing seller margins proportionally.
+
+$$
+ϵ_{it}​∼N(0,0.25^2)
+$$
+
+The distribution of the treatment variable represents eligibility for commission reduction. We define:
+
+$$
+SmallSeller_{i}​∼Bernoulli(0.5)
+$$
+
+This creates two groups: the small sellers (treated) and large sellers (control). The policy occurs at time $T_0$, so $Post_t = 0$ is when $t < T_0$ and $Post_t = 1$ is when $t >= T_0$. The treatment exposure is:
+
+$$
+D_{it} = SmallSeller_{i}×Post_{i}
+$$
+
+This structure ensures treatment occurs only after policy implementation. This produces realistic variation around the cutoff. All in all, this creates a DAG:
+
+```{r}
+did_dag <- dagitty("dag {
+SellerAbility -> Rating
+SellerAbility -> Revenue
+
+Rating -> TopSeller
+
+Post -> Treatment
+TopSeller -> Treatment
+
+Treatment -> Revenue
+
+Post -> Revenue
+TopSeller -> Revenue
+SellerAbility -> TopSeller
+}")
+
+plot(did_dag)
+```
+
+Below is the DiD Simulation code:
+
+```{r}
+set.seed(2026)
+
+# PARAMETERS
+N <- 1000
+T <- 12
+policy_time <- 7
+
+# PANEL STRUCTURE
+seller_id <- rep(1:N, each=T)
+time <- rep(1:T, N)
+
+# TREATMENT GROUP
+small_seller <- rbinom(N,1,0.5)
+small <- rep(small_seller, each=T)
+
+post <- ifelse(time>=policy_time,1,0)
+D <- small*post
+
+# FIXED EFFECTS
+alpha_i <- rnorm(N,8,1)
+alpha <- rep(alpha_i, each=T)
+
+gamma_t <- 0.03*time
+
+# NOISE
+epsilon <- rnorm(N*T,0,0.25)
+
+# PARAMETERS
+beta0 <- 5
+delta <- 0.10
+
+# OUTCOME
+revenue <- exp(
+  beta0 +
+  0.2*small +
+  0.05*post +
+  delta*D +
+  alpha +
+  gamma_t +
+  epsilon
+)
+
+did_data <- data.frame(
+  seller_id,
+  time,
+  small,
+  post,
+  D,
+  revenue
+)
+
+write.csv(did_data,"did_simulation.csv",row.names=FALSE)
+```
+
+### Part 4 - EDA
+
+In this section, we conduct a comprehensive exploratory data analysis on both datasets to understand their characteristics, validate our simulation assumptions, and identify patterns that will inform our methodological choices.
+
+#### 4.1 RD/FE Dataset Analysis
+
+**Dataset Overview**
+
+Our RD/FE dataset consists of 12,000 observations tracking 1,000 sellers across 12 time periods. The key variables include seller rating (our running variable), Top Seller status (treatment), and revenue (outcome). The cutoff for Top Seller status is set at a rating of 4.7.
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(kableExtra)
+
+# Load the RD data
+rd_data <- read.csv("rd_simulation.csv")
+
+# Basic summary
+cat("Dataset Dimensions:\n")
+cat(sprintf("  Total Observations: %d\n", nrow(rd_data)))
+cat(sprintf("  Number of Sellers: %d\n", length(unique(rd_data$seller_id))))
+cat(sprintf("  Time Periods: %d\n", length(unique(rd_data$time))))
+```
+
+**Key Descriptive Statistics**
+
+```{r}
+# Summary statistics table
+summary_stats <- rd_data %>%
+  summarise(
+    `Variable` = c("Rating", "Revenue"),
+    `Mean` = c(mean(rating), mean(revenue)),
+    `Median` = c(median(rating), median(revenue)),
+    `Std Dev` = c(sd(rating), sd(revenue)),
+    `Min` = c(min(rating), min(revenue)),
+    `Max` = c(max(rating), max(revenue))
+  ) %>%
+  kable(format = "html", digits = 2, 
+        caption = "Table 1: Summary Statistics for RD/FE Dataset") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+summary_stats
+```
+
+**Treatment Assignment and Rating Distribution**
+
+The rating variable follows a normal distribution centered around 4.5 with a standard deviation of 0.3, as designed in our simulation. Crucially, approximately 24.5% of observations receive Top Seller status (rating ≥ 4.7), while 75.5% do not. This distribution provides sufficient variation on both sides of the cutoff for reliable RD estimation.
+
+```{r}
+# Top Seller status distribution
+rd_data %>%
+  mutate(Status = ifelse(top_seller == 1, "Top Seller", "Not Top Seller")) %>%
+  count(Status) %>%
+  mutate(Percentage = n / sum(n) * 100) %>%
+  kable(format = "html", digits = 1,
+        caption = "Table 2: Distribution of Top Seller Status") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+**Visualization 1: Rating Distribution with Cutoff**
+
+```{r}
+# Rating distribution with cutoff
+ggplot(rd_data, aes(x = rating)) +
+  geom_histogram(bins = 50, fill = "steelblue", alpha = 0.7, color = "black") +
+  geom_vline(xintercept = 4.7, color = "red", linetype = "dashed", size = 1.5) +
+  annotate("text", x = 4.7, y = Inf, label = "Cutoff = 4.7", 
+           vjust = 1.5, hjust = -0.1, color = "red", size = 5) +
+  labs(title = "Distribution of Ratings with Top Seller Cutoff",
+       x = "Rating",
+       y = "Frequency") +
+  theme_minimal(base_size = 12)
+```
+
+**Discontinuity Analysis**
+
+A key feature of our RD design is the discontinuous jump in revenue at the rating cutoff. Examining observations within ±0.1 of the cutoff (4.6 to 4.8), we observe 2,528 data points. The mean revenue for sellers just below the cutoff is \$5,570,437, while sellers just above earn \$7,351,243---a difference of \$1,780,806 or 32.0%. This substantial discontinuity provides preliminary evidence of a treatment effect.
+
+```{r}
+# Discontinuity at cutoff
+bandwidth <- 0.1
+near_cutoff <- rd_data %>%
+  filter(rating >= 4.7 - bandwidth & rating <= 4.7 + bandwidth) %>%
+  mutate(Side = ifelse(rating < 4.7, "Below Cutoff", "Above Cutoff"))
+
+discontinuity_stats <- near_cutoff %>%
+  group_by(Side) %>%
+  summarise(
+    N = n(),
+    `Mean Revenue` = mean(revenue),
+    `Median Revenue` = median(revenue),
+    `Std Dev` = sd(revenue)
+  ) %>%
+  kable(format = "html", digits = 2,
+        caption = sprintf("Table 3: Revenue Around Cutoff (±%.1f bandwidth)", bandwidth)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+discontinuity_stats
+```
+
+**Visualization 2: RD Plot (Binned Scatter)**
+
+```{r}
+# RD binned scatter plot
+bin_width <- 0.05
+rd_data_binned <- rd_data %>%
+  mutate(rating_bin = cut(rating, breaks = seq(min(rating), max(rating), bin_width))) %>%
+  group_by(rating_bin) %>%
+  summarise(
+    mean_revenue = mean(revenue),
+    mean_rating = mean(rating),
+    below_cutoff = mean(rating) < 4.7,
+    .groups = 'drop'
+  )
+
+ggplot(rd_data_binned, aes(x = mean_rating, y = mean_revenue)) +
+  geom_point(aes(color = below_cutoff), size = 3, alpha = 0.7) +
+  geom_vline(xintercept = 4.7, linetype = "dashed", size = 1, color = "black") +
+  geom_smooth(data = filter(rd_data_binned, below_cutoff), 
+              method = "lm", se = FALSE, color = "blue", size = 1) +
+  geom_smooth(data = filter(rd_data_binned, !below_cutoff), 
+              method = "lm", se = FALSE, color = "red", size = 1) +
+  scale_color_manual(values = c("red", "blue"), 
+                     labels = c("Above Cutoff", "Below Cutoff")) +
+  labs(title = "Regression Discontinuity Plot: Rating vs Revenue",
+       subtitle = "Binned scatter with linear fits on each side",
+       x = "Rating",
+       y = "Average Revenue ($)",
+       color = "Position") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+```
+
+**Revenue Comparison by Top Seller Status**
+
+Sellers with Top Seller status earn substantially more on average (\$7,621,686) compared to those without (\$5,048,579). However, this raw comparison does not account for the natural relationship between rating and revenue, which is precisely what the RD design helps us isolate.
+
+```{r}
+# Revenue by Top Seller status
+rd_data %>%
+  mutate(Status = ifelse(top_seller == 1, "Top Seller", "Not Top Seller")) %>%
+  group_by(Status) %>%
+  summarise(
+    N = n(),
+    `Mean Revenue` = mean(revenue),
+    `Median Revenue` = median(revenue),
+    `Std Dev` = sd(revenue)
+  ) %>%
+  kable(format = "html", digits = 2,
+        caption = "Table 4: Revenue by Top Seller Status") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+**Temporal Trends**
+
+Examining revenue over time reveals a consistent upward trend, increasing from an average of \$4.9M in period 1 to \$6.5M in period 12. This trend is captured by our time fixed effects (γt) in the model. The proportion of Top Sellers remains relatively stable around 24%, indicating that the rating distribution does not systematically shift over time.
+
+```{r}
+# Temporal trends
+temporal_trends <- rd_data %>%
+  group_by(time) %>%
+  summarise(
+    `Avg Revenue` = mean(revenue),
+    `Avg Rating` = mean(rating),
+    `Prop Top Seller` = mean(top_seller)
+  )
+
+ggplot(temporal_trends, aes(x = time)) +
+  geom_line(aes(y = `Avg Revenue`), color = "blue", size = 1.2) +
+  geom_point(aes(y = `Avg Revenue`), color = "blue", size = 3) +
+  labs(title = "Average Revenue Over Time",
+       x = "Time Period",
+       y = "Average Revenue ($)") +
+  theme_minimal(base_size = 12)
+```
+
+**Within-Seller Variation**
+
+An important feature of our panel data is the substantial within-seller variation in both ratings and revenue. The average within-seller standard deviation for ratings is 0.291, close to the overall standard deviation of 0.30. Critically, 97.7% of sellers (977 out of 1,000) switch their Top Seller status at least once during the 12 periods, providing rich variation for fixed effects estimation.
+
+**McCrary Density Test (Visual)**
+
+A key RD assumption is that there is no manipulation of the running variable around the cutoff. We can visually assess this by examining whether there is a discontinuous jump in the density of the rating variable at the cutoff. Our histogram shows smooth density on both sides of 4.7, suggesting no systematic sorting or gaming of the rating system.
+
+```{r}
+# McCrary density test visualization
+ggplot(rd_data, aes(x = rating, fill = rating < 4.7)) +
+  geom_histogram(bins = 50, alpha = 0.7, color = "black") +
+  geom_vline(xintercept = 4.7, linetype = "dashed", size = 1, color = "red") +
+  scale_fill_manual(values = c("red", "blue"), 
+                    labels = c("Above Cutoff", "Below Cutoff")) +
+  labs(title = "Density of Running Variable (Rating)",
+       subtitle = "No apparent manipulation at cutoff",
+       x = "Rating",
+       y = "Frequency",
+       fill = "Position") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+```
+
+**Implications for RD/FE Methodology**
+
+This EDA reveals several important insights that will inform our methodology:
+
+1.  **Sharp Discontinuity**: The clear jump in revenue at the cutoff supports using a sharp RD design.
+2.  **Sufficient Bandwidth**: We have adequate observations around the cutoff for local polynomial estimation.
+3.  **No Manipulation**: The smooth density of ratings suggests validity of the RD identifying assumption.
+4.  **Panel Structure**: High within-seller variation justifies using seller fixed effects to control for time-invariant heterogeneity.
+5.  **Time Trends**: The upward temporal trend necessitates time fixed effects in our specification.
+
+------------------------------------------------------------------------
+
+#### 4.2 DiD Dataset Analysis
+
+**Dataset Overview**
+
+Our DiD dataset also contains 12,000 observations with 1,000 sellers tracked over 12 time periods. The commission reduction policy was implemented at period 7, creating 6 pre-policy and 6 post-policy periods. Sellers are divided into two groups: Small Sellers (51.3%, treated) and Large Sellers (48.7%, control).
+
+```{r}
+# Load the DiD data
+did_data <- read.csv("did_simulation.csv")
+
+# Basic summary
+cat("Dataset Dimensions:\n")
+cat(sprintf("  Total Observations: %d\n", nrow(did_data)))
+cat(sprintf("  Number of Sellers: %d\n", length(unique(did_data$seller_id))))
+cat(sprintf("  Time Periods: %d\n", length(unique(did_data$time))))
+cat(sprintf("  Policy Implementation: Period %d\n", 7))
+```
+
+**Treatment Group Balance**
+
+The random assignment of seller type ensures excellent balance between treatment and control groups, with 513 small sellers and 487 large sellers.
+
+```{r}
+# Treatment group distribution
+did_data %>%
+  group_by(seller_id) %>%
+  summarise(small = first(small)) %>%
+  ungroup() %>%
+  mutate(Group = ifelse(small == 1, "Small Sellers (Treated)", "Large Sellers (Control)")) %>%
+  count(Group) %>%
+  mutate(Percentage = n / sum(n) * 100) %>%
+  kable(format = "html", digits = 1,
+        caption = "Table 5: Treatment Group Distribution") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+**2×2 Treatment Structure**
+
+The classic DiD design can be visualized in a 2×2 table showing mean revenue for each group-period combination:
+
+```{r}
+# 2x2 DiD table
+did_2x2 <- did_data %>%
+  mutate(
+    Group = ifelse(small == 1, "Small Sellers", "Large Sellers"),
+    Period = ifelse(post == 1, "Post-Policy", "Pre-Policy")
+  ) %>%
+  group_by(Group, Period) %>%
+  summarise(`Mean Revenue` = mean(revenue), .groups = 'drop') %>%
+  pivot_wider(names_from = Period, values_from = `Mean Revenue`)
+
+did_2x2 %>%
+  kable(format = "html", digits = 2,
+        caption = "Table 6: Mean Revenue by Group and Period (2×2 DiD Table)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+**Preliminary DiD Estimate**
+
+Before formal regression analysis, we can calculate the simple difference-in-differences:
+
+-   **Large Sellers (Control)**: Revenue increased from \$850,144 to \$1,097,325 (+\$247,181 or 29.1%)
+-   **Small Sellers (Treated)**: Revenue increased from \$1,184,784 to \$1,635,629 (+\$450,845 or 38.1%)
+-   **Difference-in-Differences**: \$450,845 - \$247,181 = **\$203,664** (17.2% relative to pre-policy mean)
+
+This preliminary estimate suggests the commission reduction policy increased small seller revenue by approximately \$204,000 on average, after accounting for general time trends affecting all sellers.
+
+```{r}
+# Calculate DiD estimate
+large_pre <- mean(did_data$revenue[did_data$small == 0 & did_data$post == 0])
+large_post <- mean(did_data$revenue[did_data$small == 0 & did_data$post == 1])
+small_pre <- mean(did_data$revenue[did_data$small == 1 & did_data$post == 0])
+small_post <- mean(did_data$revenue[did_data$small == 1 & did_data$post == 1])
+
+diff_large <- large_post - large_pre
+diff_small <- small_post - small_pre
+did_estimate <- diff_small - diff_large
+
+cat(sprintf("DiD Estimate: $%.2f\n", did_estimate))
+cat(sprintf("Percentage Effect: %.2f%%\n", (did_estimate / small_pre) * 100))
+```
+
+**Visualization 3: Parallel Trends Plot (CRITICAL)**
+
+The key identifying assumption of DiD is parallel trends: in the absence of treatment, the treated and control groups would have followed parallel trends. We can visually assess this in the pre-policy periods.
+
+```{r}
+# Parallel trends plot
+temporal_did <- did_data %>%
+  mutate(Group = ifelse(small == 1, "Small Sellers (Treated)", "Large Sellers (Control)")) %>%
+  group_by(time, Group) %>%
+  summarise(mean_revenue = mean(revenue), .groups = 'drop')
+
+ggplot(temporal_did, aes(x = time, y = mean_revenue, color = Group, shape = Group)) +
+  geom_line(size = 1.5) +
+  geom_point(size = 4) +
+  geom_vline(xintercept = 6.5, linetype = "dashed", size = 1, color = "black") +
+  annotate("rect", xmin = 0.5, xmax = 6.5, ymin = -Inf, ymax = Inf, 
+           alpha = 0.1, fill = "gray") +
+  annotate("rect", xmin = 6.5, xmax = 12.5, ymin = -Inf, ymax = Inf, 
+           alpha = 0.1, fill = "yellow") +
+  annotate("text", x = 3.5, y = Inf, label = "Pre-Policy", vjust = 1.5, size = 5) +
+  annotate("text", x = 9.5, y = Inf, label = "Post-Policy", vjust = 1.5, size = 5) +
+  scale_color_manual(values = c("blue", "red")) +
+  labs(title = "Parallel Trends Plot: Revenue Over Time by Group",
+       subtitle = "Vertical line indicates policy implementation at Period 7",
+       x = "Time Period",
+       y = "Average Revenue ($)",
+       color = "Group",
+       shape = "Group") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+```
+
+**Pre-Period Trend Analysis**
+
+To formally assess parallel trends, we examine the pre-policy periods (1-6). While both groups exhibit positive trends, there is a slight difference in slopes: - Large Sellers: slope = \$21,114 per period (p = 0.011) - Small Sellers: slope = \$45,097 per period (p = 0.001) - Difference: \$23,983
+
+This modest pre-trend difference (approximately 2% of baseline revenue per period) suggests we should include group-specific time trends in our DiD specification to ensure robustness.
+
+```{r}
+# Pre-period trend test
+pre_period <- did_data %>% filter(post == 0)
+
+# Large sellers trend
+large_trend <- lm(revenue ~ time, data = filter(pre_period, small == 0))
+# Small sellers trend
+small_trend <- lm(revenue ~ time, data = filter(pre_period, small == 1))
+
+trend_comparison <- data.frame(
+  Group = c("Large Sellers", "Small Sellers"),
+  Slope = c(coef(large_trend)[2], coef(small_trend)[2]),
+  P_value = c(summary(large_trend)$coefficients[2, 4], 
+              summary(small_trend)$coefficients[2, 4])
+)
+
+trend_comparison %>%
+  kable(format = "html", digits = 4,
+        caption = "Table 7: Pre-Period Trend Comparison") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+**Post-Policy Treatment Effects Over Time**
+
+Examining the treatment effect in each post-policy period reveals consistency, with effects ranging from \$485,000 to \$586,000. This stability suggests the policy impact is persistent rather than a one-time shock.
+
+```{r}
+# Treatment effects by post-policy period
+post_effects <- did_data %>%
+  filter(post == 1) %>%
+  group_by(time) %>%
+  summarise(
+    Treatment_Effect = mean(revenue[small == 1]) - mean(revenue[small == 0]),
+    .groups = 'drop'
+  )
+
+ggplot(post_effects, aes(x = time, y = Treatment_Effect)) +
+  geom_line(color = "darkgreen", size = 1.5) +
+  geom_point(color = "green", size = 5, alpha = 0.7) +
+  geom_hline(yintercept = mean(post_effects$Treatment_Effect), 
+             linetype = "dashed", color = "red", size = 1) +
+  annotate("text", x = 11, y = mean(post_effects$Treatment_Effect), 
+           label = sprintf("Average: $%.0f", mean(post_effects$Treatment_Effect)),
+           vjust = -0.5, color = "red", size = 4) +
+  labs(title = "Treatment Effect Over Time (Post-Policy Periods)",
+       x = "Time Period",
+       y = "Treatment Effect ($)") +
+  theme_minimal(base_size = 12)
+```
+
+**Variance Analysis**
+
+Revenue variance increases for both groups over time and is higher for small sellers than large sellers. Post-policy, variance increases substantially for both groups, which we'll need to account for with robust standard errors.
+
+```{r}
+# Variance by group and period
+variance_table <- did_data %>%
+  mutate(
+    Group = ifelse(small == 1, "Small Sellers", "Large Sellers"),
+    Period = ifelse(post == 1, "Post-Policy", "Pre-Policy")
+  ) %>%
+  group_by(Group, Period) %>%
+  summarise(
+    `Std Dev` = sd(revenue),
+    Variance = var(revenue),
+    .groups = 'drop'
+  )
+
+variance_table %>%
+  kable(format = "html", digits = 2,
+        caption = "Table 8: Revenue Variability by Group and Period") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+**Implications for DiD Methodology**
+
+Our EDA reveals several key insights for DiD analysis:
+
+1.  **Balanced Groups**: Random assignment created well-balanced treatment and control groups.
+2.  **Parallel Trends**: Visual inspection suggests reasonable parallel trends in pre-periods, though slight divergence warrants robustness checks with group-specific trends.
+3.  **Persistent Effects**: The treatment effect is stable across post-policy periods, supporting a static DiD specification.
+4.  **Heteroskedasticity**: Increasing variance over time and by group necessitates clustered/robust standard errors.
+5.  **Panel Structure**: Having 12 time periods allows for detailed event study specifications and placebo tests.
+
+------------------------------------------------------------------------
+
+#### Summary: How EDA Influences Our Methods
+
+The exploratory analysis has revealed critical features that will shape our methodological approach:
+
+**For RD/FE Analysis:** - The sharp discontinuity at the 4.7 cutoff supports a sharp RD design - Smooth density around the cutoff validates the no-manipulation assumption - High within-seller variation justifies seller fixed effects - Upward time trends necessitate time fixed effects
+
+**For DiD Analysis:** - Generally parallel pre-trends support the DiD identifying assumption, but slight divergence suggests including group-specific time trends as a robustness check - Stable post-policy effects support a static DiD specification - Increasing variance over time requires robust standard errors clustered at the seller level - Balanced groups and multiple pre/post periods enable powerful specification tests
+
+In the following Methodology section, we deploy these insights to construct rigorous causal estimates of the policy effects on seller revenue.
+
+### Part 5 - Methodology
+
+#### 5.1: RD/FE
+
+Question:
+
+:   What is the causal effect of obtaining Top Seller status on seller revenue?
+
+In our simulated marketplace, badge assignment is fuzzy: crossing the 4.7 rating cutoff sharply increases the probability of receiving the "Top Seller" badge. This allows us to report: Sharp RD (the discontinuity in llog(Revenue) at the 4.7 cutoff) and Fuzzy RD (the badge's causal effect for sellers whose badge status changes because of the cutoff, obtained by scaling the reduced-form discontinuity by the first-stage jump in badge receipt). For FE, we controlled seller and time to utilize a two-way fixed effect:
+
+$$
+\ln(\text{Revenue}_{it}) = \beta_0 + \beta_1 \text{Rating}_{it} + \delta \text{TopSeller}_{it} + \alpha_i + \gamma_t + \epsilon_{it}
+$$
+
+**Non-technical description**
+
+**RD:** We focus on sellers very close to the 4.7 threshold. Sellers just below and just above 4.7 are comparable in underlying quality, so any jump in revenue at the cutoff is consistent with an effect driven by the badge rule rather than gradual differences in ratings.
+
+**Fuzzy RD:** Because badge receipt is not perfect, we use the cutoff as a "nudge" and estimate how much revenue changes *per additional badge receipt* near the threshold.
+
+**FE:** We compare each seller to their own past performance over time while also controlling for time effects shared across sellers, reducing bias from unchanging seller characteristics.
+
+```{r}
+library(rdrobust)
+library(fixest)
+
+# use the simulated dataset (single source of truth)
+rd_data <- read.csv("rd_simulation.csv")
+c <- 4.7
+
+with(rd_data, tapply(top_seller, rating >= c, mean))
+
+# Sharp RD
+rd_s <- rdrobust(y = log(rd_data$revenue), x = rd_data$rating, c = c)
+summary(rd_s)
+
+# Fuzzy RD
+rd_f <- rdrobust(y = log(rd_data$revenue), x = rd_data$rating, c = c,
+                 fuzzy = rd_data$top_seller)
+summary(rd_f)
+
+# Two-way fixed effects (seller + time) 
+fe_mod <- feols(log(revenue) ~ rating + top_seller | seller_id + time, data = rd_data)
+summary(fe_mod)
+
+
+```
+
+We also tried to draw a Sharp RD plot to identify any potential jump in the outcome at the threshold of 4.7. The X-axis represents the Seller Rating, and Y-axis represents Log(Revenue) of the sellers.
+
+```{r}
+rdplot(y = log(rd_data$revenue), x = rd_data$rating, c = 4.7, 
+       title = "RD Plot: Impact of Top Seller Status on Revenue",
+       y.label = "Log(Revenue)", x.label = "Rating")
+```
+
+To the left of the 4.7 cutoff, the red line shows that log(Revenue) increases smoothly as rating improves. At exactly 4.7, there's a visible gap between the two red fitted lines. This suggests that a seller with a 4.7 rating earns significantly more than a seller with a 4.69 rating, purely due to the official status rather than a difference in inherent quality.
+
+**Justification & Assumptions:**
+
+**RD (Sharp and Fuzzy):** We rely on a continuity assumption: absent the badge rule, expected revenue would vary smoothly with rating at the 4.7 cutoff. This implies that sellers just below and just above the threshold are comparable in unobserved quality, so any discontinuity in revenue can be attributed to the policy change at the cutoff. We also assume there is no precise manipulation of ratings exactly around 4.7.
+
+**FE**: By including seller fixed effects and time fixed effects, we remove time-invariant seller characteristics and common time shocks. The key identifying assumption is that, conditional on these fixed effects, remaining time-varying shocks to revenue are not systematically correlated with changes in badge status and rating.
+
+------------------------------------------------------------------------
+
+#### 5.2 Difference-in-Differences
+
+Question:
+
+:   Did the introduction of a platform-wide commission reduction policy increase seller revenue?
+
+#### 5.2.1 Brief non-technical description
+
+To estimate whether the platform-wide commission reduction increased seller revenue, we use a Difference-in-Differences (DiD) strategy that compares revenue changes before vs. after the policy for eligible (small) sellers relative to non-eligible (large) sellers. We implement DiD in three complementary ways:
+
+(1) a simple 2×2 comparison of average revenue changes across treated/control groups and pre/post periods,
+
+(2) an equivalent regression formulation that estimates the policy effect as an interaction term between eligibility and the post-policy period,
+
+(3) a first-difference (FD) panel approach that differences outcomes over time within each seller to remove time-invariant seller heterogeneity.
+
+Across all approaches, the core idea is the same: if treated and control sellers would have followed similar trends absent the policy, then the additional post-policy revenue increase among eligible sellers can be attributed to the commission reduction.
+
+#### 5.2.2 Detailed technical discussion
+
+**Data setup and key variables**
+
+We work with a seller-by-time panel. Let $Y_{it}$ denote seller $i$'s revenue in period $t$ (`revenue`). Treatment exposure is defined by eligibility interacting with the policy period:
+
+$Small_i \in \{0,1\}$ corresponds to `small` (1 = eligible/small sellers; 0 = non-eligible/large sellers).
+
+$Post_t \in \{0,1\}$ corresponds to `post` (1 = after the policy introduction; 0 = before).
+
+The DiD treatment indicator is: $$ D_{it} = Small_i \times Post_t $$, which corresponds to `D`.
+
+Because revenue is strictly positive and right-skewed, we estimate models in both levels $Y_{it}$ and logs: $$
+\log(Y_{it}) \equiv \log(\texttt{revenue}_{it})$$
+
+**(1) Method 1: 2×2 DiD (mean-based estimator)**
+
+We compute the classic 2×2 DiD estimator using group means:$$\widehat{DiD} = (\overline{Y}_{T,post} - \overline{Y}_{T,pre}) - (\overline{Y}_{C,post} - \overline{Y}_{C,pre}),$$where $T$ denotes the treated group ($Small_i=1$) and $C$ denotes the control group ($Small_i=0$).
+
+Implementation-wise, we compute mean by (`small`, `post`), take within-group pre/post differences, and
+
+difference those changes across treated vs control.
+
+We report this estimate as an intuitive baseline and as a check that the regression-based implementation is consistent with the mean-based DiD.
+
+**(2) Method 2: Recast 2×2 as a regression (interaction model + inference)**
+
+To enable statistical inference and scale to many sellers and periods, we estimate the regression form of the 2×2 DiD: $$Y_{it} = \alpha + \beta\,Small_i + \gamma\,Post_t + \delta\,(Small_i \times Post_t) + \varepsilon_{it}.$$In this formulation, the policy effect estimate is the interaction coefficient $\delta$, consistent with the lecture slide interpretation. Technical implementation choices in our use case:
+
+**Interaction term**: we explicitly include $Small_i \times Post_t$ (equivalently `small:post` or `D`) to isolate the incremental post-policy effect for eligible sellers.
+
+**Functional form**: we run both $Y_{it}$ and $\log(Y_{it})$ specifications; the log coefficient can be interpreted approximately as a percent change via $\exp(\delta)-1$.
+
+**Inference**: we cluster standard errors at the seller level (seller_id) to account for within-seller serial correlation over time.
+
+**(3) Method 3: First Differences (FD) panel DiD**
+
+We also implement DiD using first differencing, which removes time-invariant seller heterogeneity. Starting from a panel model with a seller fixed effect, first differencing yields: $$ \Delta Y_{it} = \beta\,\Delta D_{it} + \gamma + \Delta \eta_{it}.$$
+
+where $\Delta Y_{it} = Y_{it}-Y_{i,t-1}$ and $\Delta D_{it} = D_{it}-D_{i,t-1}$.
+
+In practice (with multiple periods), we difference within seller between adjacent periods: $$
+\Delta \log(Y_{it}) = \log(Y_{it}) - \log(Y_{i,t-1}), \qquad
+\Delta D_{it} = D_{it} - D_{i,t-1}.$$
+
+To flexibly absorb time shocks after differencing, we include time indicators in the FD regression and report seller-clustered standard errors.
+
+#### 5.2.3 Justification and Assumptions
+
+**(1) Method 1: 2×2 DiD**
+
+**Justification:** We use the 2×2 DiD first because it's the simplest way to answer the question: compare the pre/post revenue change for eligible sellers to the pre/post change for non-eligible sellers. It's easy to explain and gives a quick baseline before adding any model structure.
+
+**Assumptions:** The key requirement is parallel trends: without the commission cut, the revenue gap between eligible and non-eligible sellers would not systematically change over time. We also assume there wasn't another change introduced at the same time that affected eligible sellers differently.
+
+**(2) Method 2: Recast 2×2 as a regression**
+
+**Justification:** We then run the regression version because it gives the same DiD effect through the interaction term $Small_i \times Post_t$, but also lets us report standard errors and p-values. It's also convenient to estimate the effect on log(revenue) so the treatment effect can be read as an approximate percent change.
+
+**Assumptions**: Conceptually it's the same identifying assumption as 2×2 DiD: absent the policy, treated and control sellers would have moved in parallel. In regression terms, this means no group-specific unobserved shock appears right at the policy timing and drives revenue differently for eligible sellers. We cluster standard errors by seller because each seller shows up multiple times in the panel. And we assume no spillover effects exist; specifically, the reduction in commission for small sellers does not indirectly hurt large sellers' revenue through market competition.
+
+**(3) Method 3: First Differences (FD) panel DiD**
+
+**Justification:** We add a first-difference model as a robustness check. Differencing within seller removes any time-invariant seller factors (like baseline scale or inherent demand) that could otherwise confound the estimate. This is the motivation for FD in the lecture notes: differencing drops the fixed effect that creates omitted-variable bias. By adding `factor(time_fd)` to the FD model, we explicitly control for unobserverd time-specific shocks that affect all sellers identically after differencing
+
+**Assumptions:** FD still needs an exogeneity after differencing condition: sellers whose treatment status changes at the policy date shouldn't also have an unobserved revenue shock that changes at the same time for unrelated reasons, i.e., $Cov(\Delta \eta_{it}, \Delta D_{it}) = 0$. We also include time indicators in the FD regression to absorb period shocks that hit everyone.
+
+#### 5.2.4 Model Code
+
+**(1) Method 1: 2×2 DiD**
+
+```{r}
+library(dplyr)
+
+did <- did_data %>%
+  mutate(
+    log_rev = log(revenue)
+  )
+
+# ----------------------------
+# 1) 2×2 DiD (mean-based)
+# DiD = (Y_T,post - Y_T,pre) - (Y_C,post - Y_C,pre)
+# ----------------------------
+means_level <- did %>%
+  group_by(small, post) %>%
+  summarize(mean_rev = mean(revenue), .groups = "drop")
+
+did_2x2_level <- with(means_level, {
+  Y_T_post <- mean_rev[small == 1 & post == 1]
+  Y_T_pre  <- mean_rev[small == 1 & post == 0]
+  Y_C_post <- mean_rev[small == 0 & post == 1]
+  Y_C_pre  <- mean_rev[small == 0 & post == 0]
+  (Y_T_post - Y_T_pre) - (Y_C_post - Y_C_pre)
+})
+
+means_log <- did %>%
+  group_by(small, post) %>%
+  summarize(mean_logrev = mean(log_rev), .groups = "drop")
+
+did_2x2_log <- with(means_log, {
+  Y_T_post <- mean_logrev[small == 1 & post == 1]
+  Y_T_pre  <- mean_logrev[small == 1 & post == 0]
+  Y_C_post <- mean_logrev[small == 0 & post == 1]
+  Y_C_pre  <- mean_logrev[small == 0 & post == 0]
+  (Y_T_post - Y_T_pre) - (Y_C_post - Y_C_pre)
+})
+
+did_2x2_level
+did_2x2_log
+```
+
+**(2) Method 2: Recast 2×2 as a regression**
+
+```{r}
+
+# 2) Regression DiD (interaction model)
+# Y = alpha + beta*small + gamma*post + delta*(small*post) + e
+
+# Level outcome
+m_reg_level <- lm(revenue ~ small + post + small:post, data = did)
+
+# Log outcome
+m_reg_log <- lm(log_rev ~ small + post + small:post, data = did)
+
+
+summary(m_reg_level)
+summary(m_reg_log)
+
+library(lmtest)
+library(sandwich)
+
+# cluster by seller_id
+vcov_cl_level <- vcovCL(m_reg_level, cluster = did$seller_id)
+vcov_cl_log   <- vcovCL(m_reg_log,   cluster = did$seller_id)
+
+coeftest(m_reg_level, vcov = vcov_cl_level)
+coeftest(m_reg_log,   vcov = vcov_cl_log)
+```
+
+**(3) Method 3: First Differences (FD) panel DiD**
+
+```{r}
+
+did <- did_data %>%
+  mutate(log_rev = log(revenue)) %>%
+  arrange(seller_id, time)
+
+# ----------------------------
+# First differences within seller (t - (t-1))
+# ----------------------------
+did_fd <- did %>%
+  group_by(seller_id) %>%
+  mutate(
+    d_log_rev = log_rev - lag(log_rev),
+    d_rev     = revenue - lag(revenue),
+    d_D       = D - lag(D),
+    # keep the "current" time index for time controls after differencing
+    time_fd   = time
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(d_log_rev))  # drops first period for each seller
+
+# ----------------------------
+# FD model (log): Δlog(rev) = β ΔD + Δtime FE + error
+# Include factor(time_fd) to capture differenced time effects
+# ----------------------------
+m_fd_log <- lm(d_log_rev ~ d_D + factor(time_fd), data = did_fd)
+
+# Optional: FD model (level)
+m_fd_lvl <- lm(d_rev ~ d_D + factor(time_fd), data = did_fd)
+
+# Cluster-robust SEs at seller level (still recommended)
+vcov_fd_log <- vcovCL(m_fd_log, cluster = did_fd$seller_id)
+vcov_fd_lvl <- vcovCL(m_fd_lvl, cluster = did_fd$seller_id)
+
+coeftest(m_fd_log, vcov = vcov_fd_log)
+coeftest(m_fd_lvl, vcov = vcov_fd_lvl)
+
+# (Optional) Extract just the treatment effect estimate β on ΔD
+beta_fd_log <- coef(m_fd_log)["d_D"]
+beta_fd_lvl <- coef(m_fd_lvl)["d_D"]
+
+beta_fd_log
+beta_fd_lvl
+
+```
+
+### Part 6 - Findings
+
+### **6.1 Findings for RD/FE: Top Seller Badge (Rating Cutoff)**
+
+**6.1.1 Figures & Tables**
+
+Sharp RD: jump in log(revenue) at 4.7
+
+Fuzzy RD: effect of TopSeller among compliers near 4.7
+
+FE: within-seller estimate controlling seller & time shocks
+
+```{r}
+
+get_rd_from_obj <- function(rd_obj, label){
+  # rdrobust objects store point estimates in rd_obj$Estimate
+  # and standard errors in rd_obj$se (usually: conventional, bias-corrected, robust)
+  est <- as.numeric(rd_obj$Estimate[1])
+  
+  # pick robust SE if available, otherwise fallback to first available
+  se <- NA_real_
+  if(!is.null(rd_obj$se) && length(rd_obj$se) >= 3){
+    se <- as.numeric(rd_obj$se[3])   # robust
+  } else if(!is.null(rd_obj$se) && length(rd_obj$se) >= 1){
+    se <- as.numeric(rd_obj$se[1])   # conventional fallback
+  } else {
+    stop("Cannot find SE in rdrobust object. Try: str(rd_obj)")
+  }
+  
+  ci_l <- est - 1.96*se
+  ci_u <- est + 1.96*se
+  
+  data.frame(
+    Method = label,
+    Estimate_log = est,
+    SE = se,
+    CI95_low = ci_l,
+    CI95_high = ci_u,
+    Effect_pct = (exp(est) - 1) * 100,
+    CI95_pct_low = (exp(ci_l) - 1) * 100,
+    CI95_pct_high = (exp(ci_u) - 1) * 100
+  )
+}
+
+get_fe_term <- function(fe_obj, term, label){
+  ct <- summary(fe_obj)$coeftable
+  if(!(term %in% rownames(ct))){
+    stop(paste0("Term '", term, "' not found. Available: ", paste(rownames(ct), collapse=", ")))
+  }
+  est <- as.numeric(ct[term, "Estimate"])
+  se  <- as.numeric(ct[term, "Std. Error"])
+  ci_l <- est - 1.96*se
+  ci_u <- est + 1.96*se
+  
+  data.frame(
+    Method = label,
+    Estimate_log = est,
+    SE = se,
+    CI95_low = ci_l,
+    CI95_high = ci_u,
+    Effect_pct = (exp(est) - 1) * 100,
+    CI95_pct_low = (exp(ci_l) - 1) * 100,
+    CI95_pct_high = (exp(ci_u) - 1) * 100
+  )
+}
+q1_table <- rbind(
+  get_rd_from_obj(rd_s, "Sharp RD (Reduced form / ITT jump at 4.7)"),
+  get_rd_from_obj(rd_f, "Fuzzy RD (LATE: badge effect for compliers)"),
+  get_fe_term(fe_mod, "top_seller", "Two-way FE (seller + time FE)")
+)
+
+q1_table_out <- transform(
+  q1_table,
+  Estimate_log = round(Estimate_log, 4),
+  SE = round(SE, 4),
+  CI95_low = round(CI95_low, 4),
+  CI95_high = round(CI95_high, 4),
+  Effect_pct = round(Effect_pct, 2),
+  CI95_pct_low = round(CI95_pct_low, 2),
+  CI95_pct_high = round(CI95_pct_high, 2)
+)
+q1_table_out
+```
+
+Figure 1: First Stage / Treatment Probability around Cutoff (Fuzzy RD Diagnostics)
+
+```{r}
+bin_df <- rd_data %>%
+  mutate(bin = cut(rating, breaks = seq(min(rating), max(rating), length.out = 40), include.lowest = TRUE)) %>%
+  group_by(bin) %>%
+  summarise(
+    rating_mid = mean(rating),
+    p_treat = mean(top_seller),
+    .groups = "drop"
+  )
+
+ggplot(bin_df, aes(x = rating_mid, y = p_treat)) +
+  geom_point() +
+  geom_vline(xintercept = cutoff, linetype = "dashed") +
+  labs(
+    title = "Figure 1: Probability of Receiving Top Seller Status around the Cutoff",
+    x = "Rating",
+    y = "P(Top Seller)"
+  )
+```
+
+Table 2: Two-way Fixed Effects (FE) Results
+
+```{r}
+etable(fe_mod, se = "cluster", cluster = ~seller_id,
+       dict = c(rating = "Rating", top_seller = "Top Seller"),
+       title = "Table 2: Two-way FE Regression (Clustered SE by Seller)")
+
+```
+
+#### 6.1.2 Non-technical Summary
+
+**What we found:**
+
+-   Using a two-way fixed effects model, receiving the Top Seller badge is associated with a statistically precise increase in revenue of about 0.152 log points (≈ 16%, 95% CI roughly 15%--18%), even after controlling for seller fixed effects and common time shocks. Around the 4.7 cutoff, the RD design provides a local check using sellers near the threshold; in this simulation the RD estimates are less precise and have wide confidence intervals that include zero, so we treat RD as suggestive local evidence rather than the primary point estimate.
+
+-   In addition, when we compare each seller to their own historical performance (fixed effects), getting the badge is still associated with higher revenue.
+
+**Interpretation:**
+
+-   The "Top Seller" badge is not just symbolic; it appears to meaningfully increase buyer trust and conversion, translating into higher revenue for sellers who receive it. Overall, the evidence suggests the Top Seller badge can meaningfully increase seller revenue. While we do not directly observe buyer trust or conversion in the simulation, the revenue uplift is consistent with the badge improving buyer response and seller visibility on the platform.
+
+#### 6.1.3 Technical Discussion
+
+-   **RD:** The sharp RD specification estimates the discontinuity in log(revenue) at the 4.7 cutoff. Under the continuity assumption, this captures the outcome jump associated with crossing the threshold.
+
+-   **Fuzzy RD:** Treatment probability increases sharply but not deterministically at 4.7, validating a fuzzy design. While the Sharp RD provides an ITT effect, the Fuzzy RD scales this jump by the change in badge probability to estimate the Local Average Treatment Effect (LATE). This isolates the causal effect specifically for compliers, those sellers who received the badge *because* they crossed the 4.7 threshold. In our simulated panel, the fuzzy RD estimate is local and less statistically precise (wide CI), so we use it primarily as a cutoff-based design check and rely on FE for the most precise estimate.
+
+-   **Two-way FE:** Controlling for seller fixed effects and time effects, the coefficient on `top_seller` captures within-seller changes over time net of common shocks, offering complementary evidence beyond the local RD neighborhood.
+
+#### **6.1.4 Business / Organization Impact**
+
+**Implication for the platform:**
+
+-   If the badge causally increases seller revenue, then badge design becomes a powerful platform lever:
+
+    -   Improving badge credibility/visibility can increase seller revenue and may translate into higher platform sales (GMV), though GMV is not directly estimated here.
+
+    -   The cutoff threshold should be monitored for fairness/manipulation.
+
+    -   If the platform wants to support mid-tier sellers, it can introduce progressive badge tiers or "near-cutoff boosts" (e.g., visibility experiments) to maximize growth.
+
+### 6.2 Findings for DiD: Commission Reduction Policy
+
+**6.2.1 Figures & Tables**
+
+```{r}
+did_data <- read.csv("did_simulation.csv")
+
+did <- did_data %>%
+  mutate(
+    log_rev = log(revenue),
+    Group = ifelse(small == 1, "Small Sellers (Treated)", "Large Sellers (Control)")
+  )
+
+policy_t <- 7
+
+# (A) Parallel trends style plot: mean log revenue over time by group 
+did_means <- did %>%
+  group_by(time, Group) %>%
+  summarise(mean_log_rev = mean(log_rev), .groups = "drop")
+
+ggplot(did_means, aes(x = time, y = mean_log_rev, group = Group)) +
+  geom_line() +
+  geom_point() +
+  geom_vline(xintercept = policy_t, linetype = "dashed") +
+  labs(
+    title = "Figure 2: Mean Log(Revenue) Over Time — Treated vs Control (Policy at t=7)",
+    x = "Time Period",
+    y = "Mean Log(Revenue)"
+  )
+
+```
+
+Table 3: Simple 2×2 DiD (mean-based)
+
+```{r}
+did_2x2 <- did %>%
+  mutate(Period = ifelse(post == 1, "Post", "Pre")) %>%
+  group_by(Group, Period) %>%
+  summarise(MeanRevenue = mean(revenue), MeanLogRev = mean(log_rev), .groups="drop") %>%
+  pivot_wider(names_from = Period, values_from = c(MeanRevenue, MeanLogRev))
+
+did_2x2 %>%
+  kable(format="html", digits=3,
+        caption="Table 3: 2×2 Means for DiD (Revenue level and log)") %>%
+  kable_styling(bootstrap_options=c("striped","hover"))
+
+```
+
+**Regression DiD (two-way FE) + FD as robustness**
+
+**(2) Method 2: Recast 2×2 as a regression**
+
+```{r}
+
+# Two-way FE DiD (preferred)
+m_did_twfe <- feols(log_rev ~ small*post | seller_id + time, data = did, cluster = ~seller_id)
+
+# First Difference robustness
+did_fd <- did %>%
+  arrange(seller_id, time) %>%
+  group_by(seller_id) %>%
+  mutate(
+    d_log_rev = log_rev - lag(log_rev),
+    d_D = D - lag(D),
+    time_fd = time
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(d_log_rev))
+
+m_fd <- lm(d_log_rev ~ d_D + factor(time_fd), data = did_fd)
+vcov_fd <- vcovCL(m_fd, cluster = did_fd$seller_id)
+
+# Summaries (tables)
+etable(m_did_twfe,
+       dict = c(`small`="Small Seller", `post`="Post Policy", `small:post`="Policy Effect (DiD)"),
+       title="Table 10: Two-way FE DiD (log revenue), Clustered SE by Seller")
+
+coeftest(m_fd, vcov = vcov_fd)
+```
+
+Table 4: Consolidated Policy Effect Estimates (convert to %)
+
+```{r}
+did_effect <- broom::tidy(m_did_twfe, conf.int = TRUE) %>%
+  filter(term == "small:post") %>%
+  transmute(
+    Model = "TWFE DiD (log)",
+    Estimate = estimate,
+    SE = std.error,
+    CI_L = conf.low,
+    CI_U = conf.high,
+    `Implied % effect` = (exp(estimate)-1)*100
+  )
+
+fd_effect <- tibble(
+  Model = "First Difference (Δlog)",
+  Estimate = coef(m_fd)["d_D"],
+  SE = sqrt(vcov_fd["d_D","d_D"]),
+  CI_L = coef(m_fd)["d_D"] - 1.96*sqrt(vcov_fd["d_D","d_D"]),
+  CI_U = coef(m_fd)["d_D"] + 1.96*sqrt(vcov_fd["d_D","d_D"]),
+  `Implied % effect` = (exp(coef(m_fd)["d_D"])-1)*100
+)
+
+bind_rows(did_effect, fd_effect) %>%
+  kable(format="html", digits=3,
+        caption="Table 4: Estimated Policy Effect on Revenue (log points and implied %)") %>%
+  kable_styling(bootstrap_options=c("striped","hover"))
+```
+
+Event-study plot to visualize pre-trends + dynamics (event study is a diagnostic for pre-trends and dynamics)
+
+```{r}
+# Event-study: interaction of time with treated group, ref = period 6 (last pre)
+m_es <- feols(log_rev ~ i(time, small, ref = 6) | seller_id + time, data = did, cluster = ~seller_id)
+
+iplot(m_es,
+      main = "Figure 3: Event-study (Treated vs Control) — Pre-trend check and post effects",
+      xlab = "Time period",
+      ylab = "Effect on log(Revenue) relative to t=6")
+
+```
+
+#### 6.2.2 Non-technical Summary
+
+**What we found**
+
+-   After the commission reduction (period 7), eligible small sellers saw an additional revenue increase of approximately 10.5% relative to the baseline trend. This incremental lift is directly attributed to the policy, not to general market growth, because we benchmarked against large sellers facing the same platform-wide environment."
+
+-   This "extra increase" is attributed to the policy, not to general market growth, because we benchmarked against a control group facing the same platform-wide environment.
+
+**Client interpretation:**
+
+-   The policy appears to successfully support small sellers and likely increases platform supply diversity and long-run retention.
+
+#### 6.2.3 Technical Discussion
+
+-   **DiD identification:** We estimate the policy effect as the interaction `small × post` in a two-way fixed effects model, controlling for seller fixed effects and time fixed effects.
+
+-   **Parallel trends diagnostics:** Figure 2 and the event-study provide a visual check for whether treated and control trends were similar pre-policy (key assumption).
+
+-   **Robustness:** The FD model differences outcomes within seller over time, providing a robustness check that removes seller-level time-invariant confounding via differencing and includes time controls.
+
+#### 6.2.4 Business / Organization Impact
+
+**Implication for the platform:**
+
+-   If the effect is meaningfully positive, the commission reduction can be justified as:
+
+    -   a seller growth / retention strategy,
+
+    -   an ecosystem investment that increases product variety and competition,
+
+    -   a long-term GMV lever (even if short-run fee revenue falls).
+
+-   Operational next steps:
+
+    -   Consider targeted extensions (only certain categories / early-stage sellers),
+
+    -   Use A/B tests or phased rollouts next time to strengthen causal certainty,
+
+    -   Monitor unintended consequences (e.g., fee arbitrage, quality dilution).
